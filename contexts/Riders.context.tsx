@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useState,
+  useMemo,
 } from "react";
 import { useOrders } from "./Orders.context";
 import { getRandomInterval } from "@/lib/utils";
@@ -14,8 +15,7 @@ export type RidersContextProps = {
 };
 
 export const RidersContext = createContext<RidersContextProps>(
-  // @ts-ignore
-  {}
+  {} as RidersContextProps
 );
 
 export type RidersProviderProps = {
@@ -24,26 +24,46 @@ export type RidersProviderProps = {
 
 export function RidersProvider(props: RidersProviderProps) {
   const [riders, setRiders] = useState<Array<Rider>>([]);
-  const [assignedOrders, setAssignedOrders] = useState<string[]>([]);
+  const [assignedOrders, setAssignedOrders] = useState<Set<string>>(new Set());
   const { orders, pickup } = useOrders();
 
   useEffect(() => {
-    const order = orders.find((order) => !assignedOrders.includes(order.id));
-    if (order) {
-      setAssignedOrders((prev) => [...prev, order.id]);
-      setTimeout(() => {
+    const unassignedOrder = orders.find(
+      (order) => !assignedOrders.has(order.id)
+    );
+    if (unassignedOrder) {
+      const timeoutId = setTimeout(() => {
+        setAssignedOrders((prev) => {
+          const newSet = new Set(prev);
+          newSet.add(unassignedOrder.id);
+          return newSet;
+        });
         setRiders((prev) => [
           ...prev,
           {
-            orderWanted: order.id,
-            pickup,
+            orderWanted: unassignedOrder.id,
+            pickup: () => {
+              pickup(unassignedOrder);
+            },
           },
         ]);
-      }, getRandomInterval(4_000, 10_000));
+      }, getRandomInterval(4000, 10000));
+
+      return () => clearTimeout(timeoutId);
     }
+  }, [orders, assignedOrders, pickup]);
+
+  useEffect(() => {
+    const updatedRiders = riders.filter((rider) =>
+      orders.some(
+        (order) => order.id === rider.orderWanted && order.state !== "DELIVERED"
+      )
+    );
+    setRiders(updatedRiders);
   }, [orders]);
 
-  const context = { riders };
+  const context = useMemo(() => ({ riders }), [riders]);
+
   return (
     <RidersContext.Provider value={context}>
       {props.children}

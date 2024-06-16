@@ -6,6 +6,8 @@ import {
   useContext,
   useEffect,
   useState,
+  useCallback,
+  useMemo,
 } from "react";
 
 export type OrdersContextProps = {
@@ -14,8 +16,7 @@ export type OrdersContextProps = {
 };
 
 export const OrdersContext = createContext<OrdersContextProps>(
-  // @ts-ignore
-  {}
+  {} as OrdersContextProps
 );
 
 export type OrdersProviderProps = {
@@ -27,22 +28,31 @@ export function OrdersProvider(props: OrdersProviderProps) {
 
   useEffect(() => {
     const orderOrchestrator = new OrderOrchestrator();
-    const listener = orderOrchestrator.run();
-    listener.on("order", (order) => {
+    const listener = (order: Order) => {
       setOrders((prev) => [...prev, order]);
-    });
+    };
+    const eventEmitter = orderOrchestrator.run();
+    eventEmitter.on("order", listener);
+
+    return () => {
+      eventEmitter.off("order", listener);
+    };
   }, []);
 
-  const pickup = (order: Order) => {
-    alert(
-      "necesitamos eliminar del kanban a la orden recogida! Rapido! antes que nuestra gente de tienda se confunda!"
-    );
-  };
+  const pickup = useCallback((order: Order) => {
+    if (order.state === "READY") {
+      setOrders((prevOrders) =>
+        prevOrders.map((o) =>
+          o.id === order.id ? { ...o, state: "DELIVERED" } : o
+        )
+      );
+      alert("Pedido entregado al repartidor");
+    } else {
+      alert("El pedido aún no está listo");
+    }
+  }, []);
 
-  const context = {
-    orders,
-    pickup,
-  };
+  const context = useMemo(() => ({ orders, pickup }), [orders, pickup]);
 
   return (
     <OrdersContext.Provider value={context}>
